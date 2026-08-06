@@ -1,0 +1,19 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python Cache & Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Output Reports & Local Logs
+reports/
+*.json
+*.html
+*.log
+
+# Environment / Secret Files
+.env

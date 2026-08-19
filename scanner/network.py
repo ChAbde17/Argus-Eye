@@ -27,19 +27,14 @@ COMMON_SERVICES = {
 
 async def check_port(host: str, port: int, timeout: float = 1.5) -> Optional[PortResult]:
     """
-    Asynchronously checks if a single TCP port is open on the target host.
-    
-    Returns:
-        PortResult if the connection succeeds (port is open), otherwise None.
+    Asynchronously checks if a TCP port is open and attempts to grab the service banner.
     """
     try:
-        # Attempt TCP three-way handshake with a non-blocking timeout
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port),
             timeout=timeout
         )
 
-        # Infer service name based on standard assignments
         service_name = COMMON_SERVICES.get(port)
         if not service_name:
             try:
@@ -47,7 +42,30 @@ async def check_port(host: str, port: int, timeout: float = 1.5) -> Optional[Por
             except OSError:
                 service_name = "unknown"
 
-        # Gracefully shut down the socket
+        banner = None
+        try:
+            # 1. Attempt to read a "server-speaks-first" banner (e.g., SSH, FTP, SMTP)
+            # We use a shorter timeout here so it doesn't hang if the server is waiting for us
+            data = await asyncio.wait_for(reader.read(1024), timeout=0.75)
+            if data:
+                banner = data.decode("utf-8", errors="ignore").strip()
+        except asyncio.TimeoutError:
+            # 2. If it times out, it might be a "client-speaks-first" protocol (e.g., HTTP)
+            # Send a generic HTTP payload to provoke a response
+            try:
+                writer.write(b"HEAD / HTTP/1.0\r\n\r\n")
+                await writer.drain()
+                
+                data = await asyncio.wait_for(reader.read(1024), timeout=0.75)
+                if data:
+                    # Clean up the HTTP response to just grab the first line (e.g., "HTTP/1.1 200 OK")
+                    raw_banner = data.decode("utf-8", errors="ignore").strip()
+                    banner = raw_banner.split("\n")[0].strip() if raw_banner else None
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         writer.close()
         await writer.wait_closed()
 
@@ -55,12 +73,12 @@ async def check_port(host: str, port: int, timeout: float = 1.5) -> Optional[Por
             port=port,
             state="open",
             service=service_name,
-            banner=None
+            banner=banner
         )
 
     except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
-        # Port is closed, filtered, or host is unreachable
         return None
+
 
 async def _bounded_check_port(sem: asyncio.Semaphore, host: str, port: int, timeout: float) -> Optional[PortResult]:
     """

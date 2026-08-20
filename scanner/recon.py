@@ -1,6 +1,10 @@
 import asyncio
 import httpx
-from typing import Set, List
+import os
+import dns.asyncresolver
+import dns.resolver
+import dns.exception
+from typing import Set, List, Optional
 
 
 async def _query_alienvault(domain: str, client: httpx.AsyncClient) -> Set[str]:
@@ -84,3 +88,70 @@ async def get_passive_subdomains(domain: str, timeout: float = 12.0) -> List[str
                 subdomains.update(res)
 
     return sorted(list(subdomains))
+
+
+async def _resolve_candidate(
+    resolver: dns.asyncresolver.Resolver,
+    sem: asyncio.Semaphore,
+    fqdn: str
+) -> Optional[str]:
+    """
+    Attempts to resolve an A record for a single fully qualified domain name (FQDN).
+    """
+    async with sem:
+        try:
+            # Query standard IPv4 address record
+            answers = await resolver.resolve(fqdn, "A")
+            if answers:
+                return fqdn
+        except (
+            dns.resolver.NXDOMAIN,       # Domain does not exist
+            dns.resolver.NoAnswer,       # Domain exists but no A record
+            dns.resolver.LifetimeTimeout, # Query timed out
+            dns.resolver.NoNameservers,
+            dns.exception.DNSException
+        ):
+            return None
+        except Exception:
+            return None
+    return None
+
+
+async def brute_force_subdomains(
+    domain: str,
+    wordlist_path: str = "wordlists/subdomains.txt",
+    concurrency_limit: int = 50,
+    timeout: float = 2.0
+) -> List[str]:
+    """
+    Asynchronously brute-forces subdomains for a target domain using a local wordlist.
+    """
+    if not os.path.exists(wordlist_path):
+        return []
+
+    # Read wordlist prefixes
+    with open(wordlist_path, "r", encoding="utf-8", errors="ignore") as f:
+        words = [line.strip().lower() for line in f if line.strip() and not line.startswith("#")]
+
+    if not words:
+        return []
+
+    # Configure fast, reliable upstream nameservers (Cloudflare & Google)
+    resolver = dns.asyncresolver.Resolver()
+    resolver.nameservers = ["1.1.1.1", "8.8.8.8", "1.0.0.1", "8.8.4.4"]
+    resolver.lifetime = timeout
+    resolver.timeout = timeout
+
+    sem = asyncio.Semaphore(concurrency_limit)
+
+    # Construct FQDN list and spawn async resolution tasks
+    tasks = [
+        _resolve_candidate(resolver, sem, f"{word}.{domain}")
+        for word in words
+    ]
+
+    results = await asyncio.gather(*tasks)
+
+    # Filter out unresolved domains
+    active_subdomains = [fqdn for fqdn in results if fqdn is not None]
+    return sorted(list(set(active_subdomains)))

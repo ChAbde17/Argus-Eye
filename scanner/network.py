@@ -25,6 +25,45 @@ COMMON_SERVICES = {
 }
 
 
+def parse_ports(port_str: str) -> List[int]:
+    """
+    Parses a string of ports into a deduplicated, sorted list of integers.
+    Supports single ports ('80'), comma-separated ('80,443'), and ranges ('1-1024').
+    """
+    ports = set()
+    
+    # Split by comma first
+    parts = port_str.split(',')
+    
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+            
+        # Check if it's a range (e.g., '1-100')
+        if '-' in part:
+            try:
+                start_str, end_str = part.split('-')
+                start = int(start_str)
+                end = int(end_str)
+                
+                # Ensure valid port boundaries
+                if start <= end and 1 <= start <= 65535 and 1 <= end <= 65535:
+                    ports.update(range(start, end + 1))
+            except ValueError:
+                pass  # Ignore malformed ranges gracefully
+        else:
+            # Handle single ports
+            try:
+                port = int(part)
+                if 1 <= port <= 65535:
+                    ports.add(port)
+            except ValueError:
+                pass  # Ignore invalid strings gracefully
+                
+    return sorted(list(ports))
+    
+    
 async def check_port(host: str, port: int, timeout: float = 1.5) -> Optional[PortResult]:
     """
     Asynchronously checks if a TCP port is open and attempts to grab the service banner.

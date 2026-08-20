@@ -1,7 +1,8 @@
 import argparse
 import sys
 from scanner.models import ScanReport
-
+from scanner.models import ScanReport
+from scanner.network import parse_ports
 
 def parse_arguments() -> argparse.Namespace:
     """Parses command-line arguments for the Recon CLI tool."""
@@ -54,17 +55,19 @@ def parse_arguments() -> argparse.Namespace:
 def main():
     args = parse_arguments()
 
+    # Parse the raw port string into a list of integers
+    target_ports = parse_ports(args.ports)
+
     # Initialize the master report model
     report = ScanReport(target=args.target)
 
     # Display test configuration confirmation
     print(f"[+] Target configured: {args.target}")
-    print(f"[+] Ports set: {args.ports}")
+    print(f"[+] Ports to scan: {len(target_ports)} ports (e.g., {target_ports[:3]}...)")
     print(f"[+] Wordlist set: {args.wordlist}")
     print(f"[+] Output format: {args.output}")
     print(f"[+] Concurrency limit: {args.concurrency}")
     print(f"[+] Scan initialized at: {report.scan_date}")
-
 
 if __name__ == "__main__":
     main()

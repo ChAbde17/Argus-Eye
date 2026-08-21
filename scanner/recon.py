@@ -5,7 +5,7 @@ import dns.asyncresolver
 import dns.resolver
 import dns.exception
 from typing import Set, List, Optional
-
+from scanner.models import Host
 
 async def _query_alienvault(domain: str, client: httpx.AsyncClient) -> Set[str]:
     """Queries AlienVault OTX passive DNS database."""
@@ -155,3 +155,71 @@ async def brute_force_subdomains(
     # Filter out unresolved domains
     active_subdomains = [fqdn for fqdn in results if fqdn is not None]
     return sorted(list(set(active_subdomains)))
+
+
+async def _resolve_subdomain_to_host(
+    resolver: dns.asyncresolver.Resolver,
+    sem: asyncio.Semaphore,
+    fqdn: str
+) -> Optional[Host]:
+    """
+    Resolves an FQDN to its primary IPv4 address and wraps it in a Host dataclass.
+    """
+    async with sem:
+        try:
+            answers = await resolver.resolve(fqdn, "A")
+            if answers:
+                ip = str(answers[0])
+                return Host(ip=ip, hostname=fqdn)
+        except Exception:
+            return None
+    return None
+
+
+async def discover_hosts(
+    domain: str,
+    wordlist_path: str = "wordlists/subdomains.txt",
+    concurrency_limit: int = 50,
+    timeout: float = 2.5
+) -> List[Host]:
+    """
+    Coordinates passive feeds and active brute-forcing, deduplicates findings,
+    and returns a list of active Host objects mapped to their resolved IPs.
+    """
+    # 1. Run passive discovery and active brute-force in parallel
+    passive_task = get_passive_subdomains(domain)
+    brute_task = brute_force_subdomains(
+        domain=domain,
+        wordlist_path=wordlist_path,
+        concurrency_limit=concurrency_limit,
+        timeout=timeout
+    )
+
+    passive_subs, brute_subs = await asyncio.gather(passive_task, brute_task)
+
+    # 2. Deduplicate all targets into a single unique set (including the root domain)
+    all_targets: Set[str] = set(passive_subs) | set(brute_subs)
+    all_targets.add(domain.lower())
+
+    # 3. Configure DNS resolver
+    resolver = dns.asyncresolver.Resolver()
+    resolver.nameservers = ["1.1.1.1", "8.8.8.8", "1.0.0.1", "8.8.4.4"]
+    resolver.lifetime = timeout
+    resolver.timeout = timeout
+
+    sem = asyncio.Semaphore(concurrency_limit)
+
+    # 4. Resolve all discovered targets concurrently
+    resolve_tasks = [
+        _resolve_subdomain_to_host(resolver, sem, target)
+        for target in all_targets
+    ]
+
+    host_results = await asyncio.gather(*resolve_tasks)
+
+    # 5. Filter out unreachable/unresolved hosts
+    active_hosts = [h for h in host_results if h is not None]
+
+    # Sort hosts by hostname for consistent output
+    active_hosts.sort(key=lambda h: h.hostname or h.ip)
+    return active_hosts

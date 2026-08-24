@@ -11,16 +11,18 @@ console = Console()
 
 
 def print_banner():
-    """Prints the custom Argus-Eye CLI ASCII banner."""
+    """Prints the compact Argus-Eye CLI ASCII banner."""
     raw_banner = r"""
- █████   ██████   ██████  ██   ██  ██████        ███████ ██   ██ ███████
-██   ██  ██   ██ ██       ██   ██ ██             ██       ██ ██  ██     
-███████  ██████  ██  ████ ██   ██  █████  ██████ █████     ███   █████  
-██   ██  ██   ██ ██    ██ ██   ██      ██        ██        ███   ██     
-██   ██  ██   ██  ██████   █████  ██████         ███████   ███   ███████
-"""
-    banner_text = Text(raw_banner, style="bold cyan", no_wrap=True)
-    banner_text.append("\n  [+] Asynchronous Vulnerability & Attack Surface Recon Scanner", style="italic white")
+   ___                         ______          
+  /   |  _________ ___  _______/ ____/_  _____ 
+ / /| | / ___/ __ `/ / / / ___/ __/ / / / / _ \
+/ ___ |/ /  / /_/ / /_/ (__  ) /___/ /_/ /  __/
+/_/  |_/_/   \__, /\__,_/____/_____/\__, /\___/ 
+            /____/                 /____/      """
+
+    banner_text = Text(raw_banner, style="bold cyan")
+    banner_text.append("\n\n  ⚡ Async Recon & Attack Surface Scanner", style="bold white")
+    banner_text.append("\n  🛠  Made by CH ABDE", style="italic magenta")
 
     console.print(Panel(banner_text, border_style="bold blue", expand=False))
 

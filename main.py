@@ -6,7 +6,13 @@ from scanner.network import parse_ports, scan_ports_concurrently
 from scanner.recon import discover_hosts
 from scanner.web_audit import audit_web_target
 from scanner.reporter import console, print_banner, display_results_tables
-
+from scanner.reporter import (
+    console,
+    print_banner,
+    display_results_tables,
+    export_to_json,
+    export_to_html
+)
 
 def parse_arguments() -> argparse.Namespace:
     """Parses command-line arguments."""
@@ -96,6 +102,16 @@ async def run_scanner():
 
     # Step 4: Render UI Tables
     display_results_tables(report)
+
+    # Step 5: Export Reports
+    console.print("\n[bold cyan][*] Generating reports...[/bold cyan]")
+    if args.output in ["json", "both"]:
+        json_file = export_to_json(report, "results.json")
+        console.print(f"  [bold green]✔[/bold green] JSON report saved to: [bold white]{json_file}[/bold white]")
+
+    if args.output in ["html", "both"]:
+        html_file = export_to_html(report, "results.html")
+        console.print(f"  [bold green]✔[/bold green] HTML report saved to: [bold white]{html_file}[/bold white]")
 
 
 def main():

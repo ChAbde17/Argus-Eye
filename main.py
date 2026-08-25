@@ -49,8 +49,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "-c", "--concurrency",
         type=int,
-        default=50,
-        help="Max concurrent network workers. Default: 50"
+        default=250,
+        help="Max concurrent network workers. Default: 250"
     )
 
     return parser.parse_args()
@@ -80,14 +80,16 @@ async def run_scanner():
     console.print(f"[bold green][+][/bold green] Recon complete: Found [bold green]{len(report.hosts)}[/bold green] active host(s).")
 
     # Step 2: Port Scanning & Banner Grabbing
-    with console.status("[bold green]Scanning TCP ports and extracting banners...", spinner="dots"):
-        for host in report.hosts:
-            open_ports = await scan_ports_concurrently(
+    with console.status("[bold green]Scanning ports across all active hosts...", spinner="dots"):
+        async def _scan_host(host: Host):
+            host.open_ports = await scan_ports_concurrently(
                 host=host.ip,
                 ports=target_ports,
-                concurrency_limit=args.concurrency
+                concurrency_limit=args.concurrency,
+                timeout=0.6
             )
-            host.open_ports = open_ports
+
+        await asyncio.gather(*[_scan_host(h) for h in report.hosts])
 
     # Step 3: Web Security Auditing
     with console.status("[bold green]Auditing HTTP security headers and sensitive paths...", spinner="dots"):

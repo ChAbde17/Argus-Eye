@@ -1,8 +1,7 @@
 import asyncio
 import socket
-from typing import Optional
+from typing import Optional, List
 from scanner.models import PortResult
-from typing import List
 
 # Mapping of well-known ports to default service names
 COMMON_SERVICES = {
@@ -64,58 +63,48 @@ def parse_ports(port_str: str) -> List[int]:
     return sorted(list(ports))
     
     
-async def check_port(host: str, port: int, timeout: float = 1.5) -> Optional[PortResult]:
-    """
-    Asynchronously checks if a TCP port is open and attempts to grab the service banner.
-    """
+async def _grab_banner(host: str, port: int, timeout: float = 0.8) -> Optional[str]:
+    """Dedicated banner grabber run ONLY on confirmed open ports."""
     try:
         reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port),
-            timeout=timeout
+            asyncio.open_connection(host, port), timeout=timeout
         )
-
-        service_name = COMMON_SERVICES.get(port)
-        if not service_name:
-            try:
-                service_name = socket.getservbyport(port, "tcp")
-            except OSError:
-                service_name = "unknown"
-
         banner = None
         try:
-            # 1. Attempt to read a "server-speaks-first" banner (e.g., SSH, FTP, SMTP)
-            # We use a shorter timeout here so it doesn't hang if the server is waiting for us
-            data = await asyncio.wait_for(reader.read(1024), timeout=0.75)
+            # 1. Server-speaks-first protocols (SSH/FTP)
+            data = await asyncio.wait_for(reader.read(512), timeout=0.4)
             if data:
                 banner = data.decode("utf-8", errors="ignore").strip()
         except asyncio.TimeoutError:
-            # 2. If it times out, it might be a "client-speaks-first" protocol (e.g., HTTP)
-            # Send a generic HTTP payload to provoke a response
+            # 2. HTTP probe fallback
             try:
                 writer.write(b"HEAD / HTTP/1.0\r\n\r\n")
                 await writer.drain()
-                
-                data = await asyncio.wait_for(reader.read(1024), timeout=0.75)
+                data = await asyncio.wait_for(reader.read(512), timeout=0.4)
                 if data:
-                    # Clean up the HTTP response to just grab the first line (e.g., "HTTP/1.1 200 OK")
                     raw_banner = data.decode("utf-8", errors="ignore").strip()
                     banner = raw_banner.split("\n")[0].strip() if raw_banner else None
             except Exception:
                 pass
-        except Exception:
-            pass
 
         writer.close()
         await writer.wait_closed()
+        return banner
+    except Exception:
+        return None
 
-        return PortResult(
-            port=port,
-            state="open",
-            service=service_name,
-            banner=banner
+
+async def check_port_fast(host: str, port: int, timeout: float = 0.6) -> Optional[int]:
+    """Lightweight TCP handshake check with short timeout."""
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=timeout
         )
-
-    except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+        writer.close()
+        await writer.wait_closed()
+        return port
+    except Exception:
         return None
 
 
@@ -128,26 +117,45 @@ async def _bounded_check_port(sem: asyncio.Semaphore, host: str, port: int, time
         return await check_port(host, port, timeout)
 
 
-async def scan_ports_concurrently(host: str, ports: List[int], concurrency_limit: int = 200, timeout: float = 1.5) -> List[PortResult]:
+async def scan_ports_concurrently(
+    host: str,
+    ports: List[int],
+    concurrency_limit: int = 250,
+    timeout: float = 0.6
+) -> List[PortResult]:
     """
-    Scans a list of ports concurrently, bounded by a semaphore.
-    
-    Returns:
-        A list of PortResult objects ONLY for ports that are open.
+    High-speed two-phase port scanner:
+    Phase 1: Rapid async TCP sweep.
+    Phase 2: Targeted banner extraction on open ports only.
     """
-    # Create the concurrency toll booth
     sem = asyncio.Semaphore(concurrency_limit)
-    
-    # Prepare all the tasks
-    tasks = [
-        _bounded_check_port(sem, host, port, timeout)
-        for port in ports
-    ]
-    
-    # Execute all tasks concurrently and wait for them to finish
-    results = await asyncio.gather(*tasks)
-    
-    # Filter out None values (which represent closed/filtered ports)
-    open_ports = [res for res in results if res is not None]
-    
-    return open_ports
+
+    async def _bounded_check(p: int):
+        async with sem:
+            return await check_port_fast(host, p, timeout)
+
+    # Phase 1: Fast TCP sweep
+    check_tasks = [_bounded_check(p) for p in ports]
+    open_port_nums = [p for p in await asyncio.gather(*check_tasks) if p is not None]
+
+    # Phase 2: Grab banners concurrently ONLY for open ports
+    results: List[PortResult] = []
+    for port in open_port_nums:
+        service_name = COMMON_SERVICES.get(port)
+        if not service_name:
+            try:
+                service_name = socket.getservbyport(port, "tcp")
+            except OSError:
+                service_name = "unknown"
+
+        banner = await _grab_banner(host, port)
+        results.append(
+            PortResult(
+                port=port,
+                state="open",
+                service=service_name,
+                banner=banner
+            )
+        )
+
+    return sorted(results, key=lambda r: r.port)

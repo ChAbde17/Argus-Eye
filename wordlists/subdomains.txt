@@ -1,10 +1,10 @@
 www
+mail
 api
 dev
 staging
 admin
-mail
-portal
-test
 vpn
 blog
+test
+ns1

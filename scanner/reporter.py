@@ -248,3 +248,22 @@ def export_to_html(report: ScanReport, filepath: str = "results.html") -> str:
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(html_content)
     return filepath
+    
+def display_summary_card(report: ScanReport, duration: float):
+    """Renders a final executive summary panel."""
+    total_hosts = len(report.hosts)
+    total_ports = sum(len(h.open_ports) for h in report.hosts)
+    total_web = sum(len(h.web_findings) for h in report.hosts)
+    total_exposed = sum(len(f.exposed_paths) for h in report.hosts for f in h.web_findings)
+
+    summary_text = Text()
+    summary_text.append("✔ Scan completed successfully!\n\n", style="bold green")
+    summary_text.append(f"  • Target:             {report.target}\n", style="bold white")
+    summary_text.append(f"  • Total Duration:     {duration:.2f} seconds\n", style="cyan")
+    summary_text.append(f"  • Active Hosts:       {total_hosts}\n", style="white")
+    summary_text.append(f"  • Open Ports Found:   {total_ports}\n", style="green")
+    summary_text.append(f"  • Web Audits Run:     {total_web}\n", style="yellow")
+    summary_text.append(f"  • Exposed Files:      {total_exposed}\n", style="bold red" if total_exposed > 0 else "white")
+
+    console.print("\n")
+    console.print(Panel(summary_text, title="[bold cyan]Argus-Eye Execution Summary[/bold cyan]", border_style="green", expand=False))

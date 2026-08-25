@@ -1,21 +1,23 @@
 import asyncio
 import argparse
 import sys
+import time
 from scanner.models import ScanReport, Host
 from scanner.network import parse_ports, scan_ports_concurrently
 from scanner.recon import discover_hosts
 from scanner.web_audit import audit_web_target
-from scanner.reporter import console, print_banner, display_results_tables
+from scanner.utils import sanitize_target, is_valid_target
 from scanner.reporter import (
     console,
     print_banner,
     display_results_tables,
+    display_summary_card,
     export_to_json,
     export_to_html
 )
 
+
 def parse_arguments() -> argparse.Namespace:
-    """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Argus-Eye - High-Performance Recon & Vulnerability Scanner",
         formatter_class=argparse.RawTextHelpFormatter
@@ -57,30 +59,36 @@ def parse_arguments() -> argparse.Namespace:
 
 
 async def run_scanner():
-    # Print banner before parsing arguments so it appears in --help output
     print_banner()
     args = parse_arguments()
 
+    # 1. Target Sanitization & Validation
+    target = sanitize_target(args.target)
+    if not is_valid_target(target):
+        console.print(f"[bold red][!] Error:[/bold red] '{args.target}' is not a valid domain or IPv4 address.")
+        sys.exit(1)
+
+    start_time = time.perf_counter()
     target_ports = parse_ports(args.ports)
-    report = ScanReport(target=args.target)
+    report = ScanReport(target=target)
 
-    console.print(f"[bold cyan][*][/bold cyan] Initiating target recon on: [bold white]{args.target}[/bold white]")
-    console.print(f"[bold cyan][*][/bold cyan] Scanning {len(target_ports)} target port(s) with concurrency limit {args.concurrency}\n")
+    console.print(f"[bold cyan][*][/bold cyan] Target locked: [bold white]{target}[/bold white]")
+    console.print(f"[bold cyan][*][/bold cyan] Port count: [bold white]{len(target_ports)}[/bold white] | Concurrency: [bold white]{args.concurrency}[/bold white]\n")
 
-    # Step 1: Subdomain Reconnaissance & DNS Resolution
+    # 2. Host & Subdomain Discovery
     with console.status("[bold green]Discovering active hosts and subdomains...", spinner="dots"):
         hosts = await discover_hosts(
-            domain=args.target,
+            domain=target,
             wordlist_path=args.wordlist,
             concurrency_limit=args.concurrency
         )
         report.hosts = hosts
         report.subdomains = [h.hostname for h in hosts if h.hostname]
 
-    console.print(f"[bold green][+][/bold green] Recon complete: Found [bold green]{len(report.hosts)}[/bold green] active host(s).")
+    console.print(f"[bold green][+][/bold green] Recon complete: Discovered [bold green]{len(report.hosts)}[/bold green] active host(s).")
 
-    # Step 2: Port Scanning & Banner Grabbing
-    with console.status("[bold green]Scanning ports across all active hosts...", spinner="dots"):
+    # 3. Concurrent Multi-Host Port Sweeps
+    with console.status("[bold green]Scanning TCP ports and extracting banners across all hosts...", spinner="dots"):
         async def _scan_host(host: Host):
             host.open_ports = await scan_ports_concurrently(
                 host=host.ip,
@@ -91,21 +99,21 @@ async def run_scanner():
 
         await asyncio.gather(*[_scan_host(h) for h in report.hosts])
 
-    # Step 3: Web Security Auditing
+    # 4. Asynchronous Web Auditing
     with console.status("[bold green]Auditing HTTP security headers and sensitive paths...", spinner="dots"):
-        for host in report.hosts:
+        async def _audit_host(host: Host):
             web_ports = [p.port for p in host.open_ports if p.port in [80, 443, 8080, 8443]]
             target_domain = host.hostname or host.ip
-
             if web_ports or 80 in target_ports or 443 in target_ports:
                 finding = await audit_web_target(target_domain)
                 if finding:
                     host.web_findings.append(finding)
 
-    # Step 4: Render UI Tables
+        await asyncio.gather(*[_audit_host(h) for h in report.hosts])
+
+    # 5. UI Render & Exports
     display_results_tables(report)
 
-    # Step 5: Export Reports
     console.print("\n[bold cyan][*] Generating reports...[/bold cyan]")
     if args.output in ["json", "both"]:
         json_file = export_to_json(report, "results.json")
@@ -114,6 +122,9 @@ async def run_scanner():
     if args.output in ["html", "both"]:
         html_file = export_to_html(report, "results.html")
         console.print(f"  [bold green]✔[/bold green] HTML report saved to: [bold white]{html_file}[/bold white]")
+
+    elapsed = time.perf_counter() - start_time
+    display_summary_card(report, elapsed)
 
 
 def main():

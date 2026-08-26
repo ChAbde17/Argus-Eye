@@ -1,6 +1,7 @@
 import asyncio
 import argparse
 import sys
+import os
 import time
 from scanner.models import ScanReport, Host
 from scanner.network import parse_ports, scan_ports_concurrently
@@ -47,6 +48,12 @@ def parse_arguments() -> argparse.Namespace:
         default="json",
         choices=["json", "html", "both"],
         help="Output format: json, html, or both. Default: json"
+    )
+    parser.add_argument(
+        "-r", "--report-name",
+        type=str,
+        default="results",
+        help="Custom report filepath/name (e.g. 'reports/my_scan' or 'audit_kali'). Default: 'results'"
     )
     parser.add_argument(
         "-c", "--concurrency",
@@ -114,13 +121,21 @@ async def run_scanner():
     # 5. UI Render & Exports
     display_results_tables(report)
 
+    # Sanitize report filename/path (strip .json / .html if passed by user)
+    base_report = args.report_name
+    if base_report.endswith(".json") or base_report.endswith(".html"):
+        base_report = os.path.splitext(base_report)[0]
+
+    json_path = f"{base_report}.json"
+    html_path = f"{base_report}.html"
+
     console.print("\n[bold cyan][*] Generating reports...[/bold cyan]")
     if args.output in ["json", "both"]:
-        json_file = export_to_json(report, "results.json")
+        json_file = export_to_json(report, json_path)
         console.print(f"  [bold green]✔[/bold green] JSON report saved to: [bold white]{json_file}[/bold white]")
 
     if args.output in ["html", "both"]:
-        html_file = export_to_html(report, "results.html")
+        html_file = export_to_html(report, html_path)
         console.print(f"  [bold green]✔[/bold green] HTML report saved to: [bold white]{html_file}[/bold white]")
 
     elapsed = time.perf_counter() - start_time

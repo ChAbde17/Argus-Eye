@@ -88,14 +88,22 @@ def display_results_tables(report: ScanReport):
         console.print(web_table)
 
 def export_to_json(report: ScanReport, filepath: str = "results.json") -> str:
-    """Exports scan results to a formatted JSON file."""
+    """Exports scan results to a formatted JSON file, ensuring directories exist."""
+    dir_path = os.path.dirname(filepath)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(report.to_dict(), f, indent=2)
     return filepath
 
 
 def export_to_html(report: ScanReport, filepath: str = "results.html") -> str:
-    """Generates a standalone dark-themed HTML report."""
+    """Generates a standalone HTML report, ensuring directories exist."""
+    dir_path = os.path.dirname(filepath)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+
     total_ports = sum(len(h.open_ports) for h in report.hosts)
     total_web = sum(len(h.web_findings) for h in report.hosts)
 

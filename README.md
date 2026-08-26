@@ -69,7 +69,7 @@
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/ChAbde17/Argus-Eye.git
+git clone [https://github.com/ChAbde17/Argus-Eye.git](https://github.com/yourusername/Argus-Eye.git)
 cd Argus-Eye
 
 ```
@@ -199,7 +199,7 @@ this program.
 ## 👤 Author
 
 * **Abderrahmane Chourak (CH ABDE)**
-* **Portfolio / GitHub:** [@abderrahmane-chourak](https://github.com/abdcrk17)
+* **Portfolio / GitHub:** [@abderrahmane-chourak](https://github.com/ChAbde17)
 
 ```
 

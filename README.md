@@ -199,8 +199,7 @@ this program.
 ## 👤 Author
 
 * **Abderrahmane Chourak (CH ABDE)**
-* **Portfolio / GitHub:** [@abderrahmane-chourak](https://github.com/)
-* **Project Plan & Execution:** SUPMTI Engineering Project
+* **Portfolio / GitHub:** [@abderrahmane-chourak](https://github.com/abdcrk17)
 
 ```
 

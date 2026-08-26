@@ -69,7 +69,7 @@
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/abdcrk17/Argus-Eye.git
+git clone https://github.com/ChAbde17/Argus-Eye.git
 cd Argus-Eye
 
 ```
